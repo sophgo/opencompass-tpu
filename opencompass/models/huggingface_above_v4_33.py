@@ -176,6 +176,7 @@ class HuggingFacewithChatTemplate(BaseModel):
         self._load_tokenizer(tokenizer_path or path, tokenizer_kwargs, pad_token_id)
         if not tokenizer_only:
             self._load_model(path=path, kwargs=model_kwargs, peft_path=peft_path, peft_kwargs=peft_kwargs)
+        self.enable_thinking = generation_kwargs.pop("enable_thinking", None)
         self.generation_kwargs = generation_kwargs
         self.fastchat_template = fastchat_template
         self.stop_words = list(set(stop_words + self._get_potential_stop_words(path)))
@@ -440,7 +441,7 @@ class HuggingFacewithChatTemplate(BaseModel):
             messages = _format_with_fast_chat_template(messages, self.fastchat_template)
             tokens = self.tokenizer.batch_encode_plus(messages, **tokenize_kwargs)
         else:
-            messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False) for m in messages]
+            messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False, enable_thinking=self.enable_thinking) for m in messages]
             tokenize_kwargs['add_special_tokens'] = False
             tokens = self.tokenizer.batch_encode_plus(messages, **tokenize_kwargs)
 

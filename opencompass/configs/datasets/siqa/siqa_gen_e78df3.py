@@ -18,6 +18,8 @@ siqa_infer_cfg = dict(
                     role='HUMAN',
                     prompt=
                     '{context}\nQuestion: {question}\nA. {answerA}\nB. {answerB}\nC. {answerC}\nAnswer:'
+                    # '{context}\nQuestion: {question}\nA. {answerA}\nB. {answerB}\nC. {answerC}\nAnswer: (no explanation)'
+                    # '{context}\nQuestion: {question}\nA. {answerA}\nB. {answerB}\nC. {answerC}\nAnswer: (do not give explanation)'
                 )
             ], ),
     ),

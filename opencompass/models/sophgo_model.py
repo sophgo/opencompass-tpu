@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from typing import Dict, List, Optional, Union
 from .base import BaseModel, LMTemplateParser
 
@@ -12,6 +12,7 @@ from .huggingface_above_v4_33 import _convert_base_messages, _convert_chat_messa
 class SophgoModel(BaseModel):
 
     def __init__(self,
+                 name: str,
                  model_path: str,
                  sg_tokenizer_path: str,
                  max_seq_len: int = 2048,
@@ -21,19 +22,32 @@ class SophgoModel(BaseModel):
                  generation_kwargs: dict = dict(),
                  meta_template: Optional[Dict] = None,
                  **kwargs):
+        self.name = name
         self.device = device
         self.devid = devid
         self.max_seq_len = max_seq_len
         self.sample_kwargs = sample_kwargs
+        self.enable_thinking = generation_kwargs.pop("enable_thinking", None)
         self.generation_kwargs = generation_kwargs
         self.template_parser = _get_meta_template(meta_template)
-        self.load_model(model_path, sg_tokenizer_path)
+        self.load_tokenizer(sg_tokenizer_path)
+        self.load_model(model_path)
         self.eos_token_id = None
 
-    def load_model(self, model_path, tokenizer_path):
+    def load_tokenizer(self, tokenizer_path):
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_path, trust_remote_code=True
         )
+        generation_config = GenerationConfig.from_pretrained(tokenizer_path)
+        if generation_config.pad_token_id is not None:
+            self.tokenizer.pad_token_id = generation_config.pad_token_id
+            return
+        if self.tokenizer.eos_token_id is not None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+            return
+        raise ValueError('pad_token_id is not set for this tokenizer. Please set `pad_token_id={PAD_TOKEN_ID}` in model_cfg.')
+
+    def load_model(self, model_path):
         if self.device == "gpu":
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path, torch_dtype="auto", device_map="auto"
@@ -47,7 +61,13 @@ class SophgoModel(BaseModel):
             else:
                 raise EnvironmentError("Environment variable CHAT_PATH not set!")
             devices = [int(d) for d in self.devid.split(",")]
-            self.model = chat.Qwen()
+            chat_cls = {
+                "qwen": "Qwen",
+                "minicpm": "MiniCPM4",
+                "llama": "Llama3"
+            }
+            self.model = getattr(chat, chat_cls[self.name])()
+
             # init params
             self.model.init(devices, model_path)
             for key, value in self.sample_kwargs.items():
@@ -71,11 +91,10 @@ class SophgoModel(BaseModel):
             return_tensors='pt',
             padding=True,
             truncation=True,
-            add_special_tokens=True,
+            add_special_tokens=False,
             max_length=self.max_seq_len
         )
-        messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False) for m in messages]
-        tokenize_kwargs['add_special_tokens'] = False
+        messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False, enable_thinking=self.enable_thinking) for m in messages]
         tokens = self.tokenizer.batch_encode_plus(messages, **tokenize_kwargs)
 
         generation_kwargs = self.generation_kwargs.copy()
